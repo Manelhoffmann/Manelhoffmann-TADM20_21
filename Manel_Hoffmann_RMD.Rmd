@@ -1,0 +1,806 @@
+---
+title: "PRECIO DE LA VIVIENDA"
+author: "Manel Hoffmann Quintana"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+font-family: Times New Roman
+---
+
+
+
+
+![](House-prices.gif)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE) 
+
+
+load.libraries <- c ("dplyr", "tidyr", "readxl", "ggplot2", "caTools", "corrplot", "randomForest", "caret", "e1071", "skimr", "agricolae", "gmodels", "kableExtra", "cluster", "fastDummies")
+install.lib <- load.libraries[!load.libraries %in% installed.packages()]
+for(libs in install.lib) install.packages(libs, dependences = TRUE)
+sapply(load.libraries, require, character = TRUE)
+```
+
+
+```{r, echo = FALSE}
+# Cargar los datos de Kaggle (importar el dataset)
+# data.description <- read.csv("data_description.txt")
+# data.sample <- read.csv("sample_submission.csv",)
+# data.test <- read.csv(file = "test.csv",) 
+data.train <- read.csv("train.csv")  
+```
+
+
+
+
+# **Parte 1. Contexto del problema y modelo de datos.**  
+
+### Contextualización:
+
+ Los datos del siguiente análisis corresponden a una competición de [**Kaggle**](https://www.kaggle.com/c/house-prices-advanced-regression-techniques). Dicho *dataset* está compuesto por un conjunto de variables que recogen gran parte de los aspectos de la vivienda. El objetivo de este trabajo es realizar un análisis exhaustivo de los datos y poder llegar a predecir el precio final de cada vivienda según sus características.   
+
+ Los ficheros facilitados por Kaggle son los siguientes: 
+
+- `train.csv`: Dicho documento contiene el conjunto de entrenamiento. Este conjunto de datos formará el núcleo del trabajo, puesto que con su contenido se realizará el análisis y la construcción de los algoritmos. Con sus valores se elaborarán tanto predicciones como estimaciones. 
+- `test.csv`: Conjunto de datos de prueba. Este archivo no contiene los precios de las viviendas por lo que no será utilizado para el análisis. En cambio, será el archivo *train* que se dividirá en *train y test*. *Test* servirá para ajustar el modelo en el conjunto de datos de entrenamiento y poder comprobar el acierto del modelo.
+- `data_description.txt`: Archivo compuesto por una descripción completa de cada columna, detallando así la información de cada variable. Imprescindible para realizar el análisis.
+- `sample_submission.csv`: Este documento contiene un ejemplo de una regresión lineal por año y mes de venta, pies cuadrados y número de dormitorios. Puesto que este archivo está basado en la competición de Kaggle y sigue sus reglas y normas, no servirá a modo de comprobación con los resultados obtenidos por el siguiente análisis. El motivo principal es que habrá variables modificadas.               
+
+
+
+
+
+#### Visualización de datos: 
+
+Gracias a la función *dim* se observa la dimensión de la base de datos. 
+```{r}
+dim(data.train) 
+
+```
+
+
+
+
+### Construcción del modelo: 
+
+#### Limpieza de datos y clasificación: 
+
+A través de la función *select* se extraen las columnas necesarias del dataset y se crea un nuevo conjunto de datos llamado **DATA**
+```{r}
+
+ DATA <- select(data.train, MSSubClass, MSZoning, LotArea, BldgType, OverallQual, 
+                OverallCond, YearBuilt, YearRemodAdd, BsmtCond, TotalBsmtSF, HeatingQC,
+                CentralAir, GrLivArea, FullBath, HalfBath, BedroomAbvGr, KitchenAbvGr,
+                KitchenQual, TotRmsAbvGrd, GarageArea, OpenPorchSF, PoolArea, MoSold,
+                YrSold, SalePrice)
+```
+
+
+
+Renombrar variables
+```{r}
+names(DATA) = c("Diseño","Zona","SupTotal","Tipo","Calidad","Estado","Año","AñoReforma",
+                "EstadoSotano","AreaSotano","Calefaccion","AA","SupHabitable","Baños",
+                "Aseo","Dormitorios","Cocina","C.cocina","Habitaciones","SupGaraje",
+                "SupPorche","SupPiscina","MesVenta","AñoVenta","PrecioVenta")
+
+```
+*Nota: Variables siempre relacionadas en torno a la vivienda (diseño vivienda, zona vivienda, ...)*  
+
+Con la función *head* se aprecian las primeras seis filas del dataset.
+```{r}
+head(DATA, 6)
+
+```
+
+
+
+### **Tipo de dato:** 
+
+
+Variables Cuantitativas: 
+
+* SupTotal: Tamaño del lote en pies cuadrados. Esta variable servirá para saber la superficie total de la parcela.
+
+* SupGaraje: Tamaño del garaje en pies cuadrados
+
+* SupPorche: Zona de porche en pies cuadrados.
+
+* SupPiscina: Zona de la piscina en pies cuadrados.
+
+* AreaSotano: Pies cuadrados totales de área de sótano.
+
+* SupHabitable: Pies cuadrados de área habitable sobre el nivel suelo.
+
+  + Los datos anteriores son variables continuas.
+
+* Baños: Baños completos.
+
+* Aseo: Medio baño (aseo).
+
+* Dormitorios: Dormitorios sobre el nivel del suelo.
+
+* Cocina: Cocinas.
+
+* Habitaciones: Total de habitaciones por encima del nivel del suelo (no incluye baños, incluye dormitorios).
+  + Los datos anteriores son variables discretas.  
+
+
+  - Todas las variables anteriores permiten la operativización de sus valores además de poder realizar procedimientos matemáticos con ellos al ser variables cuantitativas numéricas.
+
+* Año: Fecha de construcción original.
+
+* AñoReforma: Fecha de remodelación. En el caso que no haya, la fecha será la de construcción. 
+
+* MesVenta: Mes en el que se realizó la venta (MM). 
+
+* AñoVenta: Año en el que se realizó la venta (AAAA).
+
+  + Las cuatro variables mencionadas anteriormente pueden considerarse como un factor o un factor ordenado en base al tiempo, dichas columnas se podrían interpretar como variables cuantitativas discretas debido a que permiten su operación, pero sin admitir valores intermedios.
+
+* *PrecioVenta*: Precio de venta de la vivienda. Dicha columna, al ser la variable dependiente, serán los datos a predecir.  Cuantitativa numérica continua (int)
+
+
+
+Variables Cualitativas:
+
+Diseño: Identifica el tipo de construcción implicada en la venta.
+
+      20	1-STORY 1946 & NEWER ALL STYLES
+      30	1-STORY 1945 & OLDER
+      40	1-STORY W/FINISHED ATTIC ALL AGES
+      45	1-1/2 STORY - UNFINISHED ALL AGES
+      50	1-1/2 STORY FINISHED ALL AGES
+      60	2-STORY 1946 & NEWER
+      70	2-STORY 1945 & OLDER
+      75	2-1/2 STORY ALL AGES
+      80	SPLIT OR MULTI-LEVEL
+      85	SPLIT FOYER
+      90	DUPLEX - ALL STYLES AND AGES
+      120	1-STORY PUD (Planned Unit Development) - 1946 & NEWER
+      150	1-1/2 STORY PUD - ALL AGES
+      160	2-STORY PUD - 1946 & NEWER
+      180	PUD - MULTILEVEL - INCL SPLIT LEV/FOYER
+      190	2 FAMILY CONVERSION - ALL STYLES AND AGES
+
+
+Zona: Identifica la clasificación general de zonificación de la venta. (chr)
+
+      A	    Agriculture
+      C	    Commercial
+      FV    Floating Village Residential
+      I	    Industrial 
+      RH	  Residential High Density
+      RL	  Residential Low Density 
+      RP	  Residential Low Density Park 
+      RM	  Residential Medium Density 
+
+
+Tipo: Indica el tipo de Vivienda.
+
+      1Fam	      Single-family Detached
+      2FmCon	    Two-family Conversion; originally built as one-family dwelling
+      Duplx	      Duplex 
+      TwnhsE	    Townhouse End Unit 
+      TwnhsI	    Townhouse Inside Unit 
+
+
+  - Las tres variables anteriores permiten su expresión e identificación pero no cuantificarlas. Son meramente nominales, ya que solo sirven para distinguir la existencia de una cualidad concreta y no permiten realizar ordenaciones ni operaciones matemáticas.
+  
+Calidad: Califica el material general y el acabado de la casa.
+
+      10    Very Excellent
+      9	    Excellent
+      8	    Very Good
+      7	    Good
+      6	    Above Average
+      5	    Average
+      4	    Below Average
+      3	    Fair
+      2	    Poor
+      1	    Very Poor
+
+
+Calefaccion: Calidad y estado de la calefacción.(chr)
+
+      Ex		Excellent --> 5
+      Gd		Good --> 4 
+      TA		Average/Típico --> 3
+      Fa		Fair --> 2
+      Po		Poor --> 1
+
+
+C.cocina: Calidad de la cocina. (chr)
+        
+      Ex    Excellent --> 4
+      Gd    Good --> 4
+      TA    Typical/Average --> 3
+      Fa    Fair --> 2
+      Po    Poor --> 1
+
+ 
+Estado: Valora el estado general actual de la casa.
+
+      10    Very Excellent
+      9     Excellent
+      8     Very Good
+      7     Good
+      6   	Above Average	
+      5	    Average
+      4	    Below Average	
+      3	    Fair
+      2	    Poor
+      1	    Very Poor
+
+
+
+
+EstadoSotano: Evalúa el estado general del sótano. (chr)
+
+      Ex	Excellent --> 5
+      Gd	Good --> 4
+      TA	Typical - slight dampness allowed --> 3
+      Fa	Fair - dampness or some cracking or settling --> 2
+      Po	Poor - Severe cracking, settling, or wetness --> 1
+
+
+  - Las cinco variables anteriores se pueden entender como un factor ordenado, ya que se puede establecer una ordenación, pero también como variable numérica, dependiendo del análisis que se quiera efectuar.
+  
+AA: Aire acondicionado central. Es una variable cualitativa dicotómica al tener o no tener aire acondicionado.(chr)
+
+      N		no 
+      Y 	Yes
+
+**Nota: En puntos posteriores todos los pies^2^ se transformarán a m^2^**
+
+
+### Codificar las variables categóricas:
+
+Transformar las variables de character a numeric. 
+Al ser variables categóricas ordinales, tras la transformación de character a numeric, se mantendrá el orden definido 
+```{r}
+DATA$EstadoSotano <-as.numeric(factor(DATA$EstadoSotano, ordered = TRUE,
+                                      levels = c("Po", "Fa", "TA", "Gd", "Ex")))
+DATA$Calefaccion <- as.numeric(factor(DATA$Calefaccion, ordered = TRUE, 
+                                      levels = c("Po", "Fa", "TA", "Gd", "Ex")))
+DATA$C.cocina <- as.numeric(factor(DATA$C.cocina, ordered = TRUE, 
+                                   levels = c("Po", "Fa", "TA", "Gd", "Ex")))
+```
+
+
+
+Transformar las variables categóricas "Zona", "Tipo", "AA". Al ser no ordinales, se transformarán a variables Dummy 
+```{r}
+
+
+DATA <- dummy_cols(DATA,  select_columns = c("Zona", "Tipo", "AA"), remove_first_dummy = TRUE ) 
+
+
+```
+El modelo, automáticamente, realiza un proceso en el que se queda con todas las columnas de las variables Dummy menos una con el objetivo de evitar el efecto de la multicolinealidad.
+
+### NA:
+
+Comprobación NA
+```{r}
+sum(is.na(DATA))
+colnames(DATA)[colSums(is.na(DATA))>0]
+```
+
+Puesto que la única columna que tiene NA es *EstadoSotano* y que esto significa que no hay sótano, se reemplazan los NA por 0 (NA = Sin sótano)
+```{r}
+DATA$EstadoSotano[is.na(DATA$EstadoSotano)] = 0 
+DATA[is.na(DATA)]
+```
+
+
+### Pasar de pies cuadrados a metros cuadrados
+(1m^2^ = 10,7639ft^2^)
+```{r}
+ft2_m2 = function(x){ifelse(x != 0, x/10.764, x)}
+DATA$SupTotal <- round (sapply(DATA$SupTotal, FUN = ft2_m2))
+DATA$AreaSotano <- round (sapply(DATA$AreaSotano, FUN = ft2_m2))
+DATA$SupHabitable <- round (sapply(DATA$SupHabitable, FUN = ft2_m2))
+DATA$SupGaraje <- round (sapply(DATA$SupGaraje, FUN = ft2_m2))
+DATA$SupPorche <- round (sapply(DATA$SupPorche, FUN = ft2_m2))
+DATA$SupPiscina <- round (sapply(DATA$SupPiscina, FUN = ft2_m2))
+
+```
+Es de interés destacar la importancia del round, ya que tras la operación de ft^2^ a m^2^ quedan variables float las cuales se pasarán a enteros. 
+
+
+
+### Se transforma la columna *PrecioVenta* de dólares a euros
+(1$ = 0,823819€) t.c 21/01/2021
+```{r}
+dolar_eur = function(x){x*0.823819}
+DATA$PrecioVenta <- round (sapply(DATA$PrecioVenta, FUN = dolar_eur))
+```
+
+
+
+### Eliminar los valores atípicos
+
+La mejor forma de localizar los valores atípicos (valores aberrantes) es a través de gráficos.
+```{r, fig.height = 3}
+
+ggplot(DATA, aes(SupHabitable, PrecioVenta, color = Calidad), show.legend = T) +
+geom_point(size=2, shape=20) +
+    scale_y_continuous(breaks = seq(50000,600000,50000))
+
+# Se limpian los valores atípicos del Precio de venta 
+DATA <- DATA[!(DATA$SupHabitable >400 & DATA$PrecioVenta < 160000),] 
+ 
+```
+En el gráfico se aprecia el precio de la vivienda en función de la superficie habitable. Se puede observar una clara tendencia, en función del aumento de los metros cuadrados de la vivienda aumenta su precio.
+
+
+
+
+Detección de valores atípicos (outliers) con los cuartiles: 
+
+Entre Q1 y Q3 se encuentran el 50% de los valores obtenidos en el estudio, a este rango se le conoce como rango intercuartílico (IQR). Existen dos tipos de valores atípicos, los leves y los extremos. Los primeros son aquellos que difieren entre 1.5 veces el rango intercuartílico por debajo de Q1 o por encima de Q3. Los valores atípicos extremos, en cambio, son aquellos que distan tres veces el rango intercuartílico por debajo de Q1 o por encima de Q3.
+
+Outlier Superficie de la Piscina: 
+```{r, fig.height=3}
+
+box_Piscina <- boxplot(DATA$SupPiscina,
+         main = "Superficie Piscina", 
+        boxwex = 0.5, col = "blue")
+
+```
+
+Superficie piscina: solo existen seis resultados, por lo que solo seis viviendas tienn piscina (hay dos puntos superpuestos).
+
+Que haya tantos ceros significa que la mayoría de viviendas no tienen piscina.
+
+Una de las soluciones a estos outlier es su eliminación: 
+```{r}
+DATA <- DATA[-22]
+```
+
+
+Outlier Superficie total de la vivienda: 
+```{r, fig.height=3}
+
+
+boxplot(DATA$SupTotal,
+         main = "Superficie Total", 
+        boxwex = 0.5, col = "blue", frame.plot = F)
+ 
+summary(DATA$SupTotal)
+
+```
+
+ Cálculo IQR = Q3 - Q1:  
+
+\[
+  1078-700.5=377.5
+\]
+
+Umbral Outlier parte superior:  Q3 + 1.5 * IQR = 1644.25. Las viviendas que tienen una superficie total superior a 1644.25 m^2^ se consideran outliers.
+Umbral Outlier parte inferior:  Q1 - 1.5 * IQR = 134.25. Solo hay una vivienda por debajo el umbral inferior. 
+```{r}
+v.atipicos <- function(df, inferior, superior){
+  df[df > superior] <- mean(df)
+  df[df < inferior] <- mean(df)
+  return(df)
+} 
+
+
+# Sustituimos los valores atípicos por la media 
+DATA$SupTotal <- v.atipicos(DATA$SupTotal, 134.25, 1644.25)
+```
+
+
+
+Outlier Precio de la vivienda: 
+```{r, fig.height=3}
+boxplot(DATA$PrecioVenta,
+         main = "Precio Venta", 
+        boxwex = 0.5, col = "blue", frame.plot = F)
+
+summary(DATA$PrecioVenta)
+```
+
+#### Calculo IQR = Q3 - Q1:  
+
+\[
+  176297-107035=69262
+\]
+
+Umbral Outlier Q3 + 1.5 * IQR = 280190 parte superior
+Umbral Outlier Q1 - 1.5 * IQR = 3142 parte inferior
+
+ A partir de 280190eur por arriba, y de 3142eur por abajo, existen outliers.
+```{r}
+# Sustituimos los valores atípicos por la media 
+
+DATA$PrecioVenta <- v.atipicos(DATA$PrecioVenta, 3142, 280190) #v.atipicos 
+#extraído anteriormente
+
+```
+
+
+### Comprobar la correlación entre las variables  
+```{r, echo = FALSE}
+
+DATA1 <- DATA[, sapply(DATA, is.numeric)]
+
+```
+
+
+```{r,echo=FALSE, warning = FALSE,  fig.height=5}
+
+# Para realizar la matriz de correlación utilizamos el método de Pearson.
+
+corrplot((cor(DATA1, method = "pearson")), method = "shade", 
+         shade.col = NA, tl.col = "black", order = "FPC",
+         tl.srt = 0.99, addcolorlabel = "no", type = "lower")
+
+```
+
+En dicha matriz se puede observar la correlación entre cada una de las variables del dataframe, además del escalado del color, que es proporcional al factor de correlación.
+
+
+
+
+# **Parte 2: Análisis exploratorio (EDA) **
+
+
+
+## Gráficos:
+
+#### Variables discretas, continuas: 
+
+Gráfico densidad del precio de la vivienda: 
+```{r, fig.height=3}
+
+ggplot(DATA, aes(x=PrecioVenta)) + 
+  geom_histogram(aes(y=..density..),color = 'black', fill = 'white', binwidth = 50000)+
+  geom_density(alpha=.2, fill='red') +
+  labs(title = " Densidad del Precio de Venta", x="Precio", y="Densidad") +
+  scale_x_continuous(breaks = seq(50000,600000,50000))
+
+```
+
+Queda claro que el precio mínimo es mayor que 0 y que se puede observar como la mayoría de viviendas se encuentran por debajo de los 165000eur. 
+
+Se aprecia que el histograma de la variable *Precio de la vivienda* está sesgado. Se podría normalizar aplicando la función *log()*. 
+
+
+```{r, fig.height=3}
+ ggplot(DATA) +
+  theme_bw() +
+  geom_bar(mapping = aes(x = Calidad, y = ..prop.., group = 1)) +
+  labs(title = "Calidad de la vivienda (%)", x = "Calidad") + 
+  scale_x_continuous(breaks = seq(1,10,1))
+
+```
+
+En el anterior gráfico se puede apreciar como las viviendas de calidad media (5) son las que tienen una mayor representación. En peor lugar, están las viviendas de peor calidad.  
+
+```{r, }
+Baños = DATA$Baños
+Aseos = DATA$Aseo
+Dormitorios = DATA$Dormitorios
+Habitaciones = DATA$Habitaciones
+dt = data.frame(Baños,Aseos,Dormitorios,Habitaciones)
+layout(matrix(c(1:4), nrow = 2, byrow = FALSE))
+hist(Baños)
+hist(Aseos)
+hist(Dormitorios)
+hist(Habitaciones)
+
+
+
+```
+
+En el conjunto de gráficos anteriores se puede apreciar como, entre otras cosas, más de un 50% de las casas tienen dos baños y que las viviendas suelen tener dos baños o uno, prevaleciendo las de dos. Por otra parte, en torno a un 60% de las casas no tienen Aseos y las que tienen, solo tienen uno. También se puede observar como casi un 60% de las viviendas tienen tres dormitorios y que la mayoría de viviendas tienen seis habitaciones 
+
+```{r,fig.height=3}
+ggplot(DATA, aes(x = AñoVenta, y = MesVenta)) + 
+  geom_point(color = factor (DATA$MesVenta)) +
+  labs(title = " Densidad del Precio de Venta", x="Año Venta", y="Mes Venta") +
+  scale_y_continuous(breaks = seq(1,12,1))
+```
+
+El gráfico anterior muestra la densidad de los años y de los meses de venta de las viviendas. Se puede observar como dicha densidad disminuye en torno al 2010, lo que puede ser debido a una crisis inmobiliaria.  
+
+
+
+## Gráficos de variables segmentando en función de otras
+
+
+Gráfico *Precio de la vivienda* en función de la *calidad*: 
+```{r, warning = FALSE, error = TRUE, fig.height=3}
+
+ggplot(data = DATA) + 
+  stat_summary(mapping = aes(x = Calidad, y = PrecioVenta ), fun.ymin = min, 
+    fun.ymax = max, fun.y = mean) +
+  scale_x_continuous(breaks = seq(1,10,1)) +
+  scale_y_continuous(breaks = seq(50000,600000,50000))+
+  coord_flip()
+```
+
+En el anterior gráfico, se observa el precio mínimo, medio y máximo de las viviendas en función de la calidad de la misma. La primera parte de la línea horizontal muestra el precio mínimo dentro de cada calidad, el punto enseña el precio medio y la parte final de la línea el precio máximo. 
+Es evidente la relación entre la calidad y el precio de la vivienda cuando este aumenta. Hay una creciente tendencia a que, a mayor calidad, haya mayor precio, pero esto no implica que las viviendas de mayor precio sean las de mejor calidad. Puesto que, se puede observar como hay viviendas de calidad 8 (very good) que son las más caras. 
+
+```{r, fig.height=3}
+ggplot(DATA, aes(y=PrecioVenta, x=Año, group=Año, fill=Año)) +
+  geom_boxplot()+theme(legend.position="none")+
+  theme(axis.text.x = element_text(angle = 90))+
+  labs(title = "Año construcción - Precio Vivienda", x="Año construcción", 
+       y="Precio Vivienda") +
+  scale_x_continuous(breaks = seq(1870,2010,10)) +
+  scale_y_continuous(breaks = seq(50000,600000, 50000))
+
+```
+
+Se puede observar que las viviendas antiguas, se venden a un menor precio que las nuevas. En el transcurso de los años, se han vendido más viviendas y a un  precio mayor. Posiblemente, relacionado con el aumento demográfico y el "boom" inmobiliario.
+
+```{r, fig.height=3}
+ggplot(DATA) +
+  geom_point(mapping = aes(x = SupHabitable, y = PrecioVenta,
+                           color = SupHabitable)) +
+  facet_wrap(~Tipo, nrow = 3) +
+  labs(title = "Precio vivienda en función del tipo y la SupHabitable",
+       x = "Superficie Habitable", y = "Precio Venta") +
+    scale_y_continuous(breaks = seq(100000,600000,100000))
+```
+
+Los gráficos anteriores muestran el precio de la vivienda en función del tipo de vivienda y de la sueprfície habitable. Se puede observar que la gran mayoría de viviendas son unifamiliares independientes, así como las de mayor valor y de más metros cuadrados.
+
+```{r,}
+ggplot(DATA) +
+  geom_point(mapping = aes(x = SupTotal, y = PrecioVenta, color = SupTotal)) +
+  facet_grid(Zona~AA) +
+  scale_y_continuous(breaks = seq(100000,600000, 100000)) +
+  labs(title = "Precio vivienda en función de: superficie total, zona y AA")
+```
+
+El gráfico expuesto con anterioridad representa el precio de las viviendas en función de si tienen o no aire acondicionado, indicando la zona en la que se encuentran dichas viviendas y su superficie total. Se puede observar como la gran mayoría de viviendas tienen aire acondicionado y menos de 5000 m^2^ de superficie total. La zona con más viviendas es la *zona residencial de baja densidad*.
+
+
+## Tablas:
+
+
+Tabla de estadísticos resumidos
+```{r, skimr_digits = 1}
+skimr::skim(DATA)
+```
+Utilizando la función *Skim* se obtienen estadísticos resumidos de todas las variables como por ejemplo: media, sd, percentiles, ...
+
+Tabla de frecuencias agrupada en intervalos:
+```{r}
+kable(table.freq(hist(DATA$PrecioVenta, plot  = FALSE)))
+
+```
+
+Utilizando la librería *agricolae* se construye una tabla de frecuencias para la variable *PrecioVenta* agrupadas en intervalos. 
+
+
+Tabla de frecuencias absolutas para cada uno de los factores:
+```{r}
+#apply(DATA, MARGIN = 2, FUN = table)
+
+# No se ejecuta debido a su extensión.
+```
+
+
+
+
+Tabla en función AA, Tipo y Zona:
+```{r}
+100 * round(ftable(prop.table(table(DATA$AA, DATA$Tipo, DATA$Zona))),4)
+```
+En la siguiente tabla se puede observar el tipo de vivienda en función de si tienen o no aire acondicionado y en que zona se encuentran. El 68% de las viviendas tienen aire acondicionado, son viviendas unifamiliares independientes  y son de zona residencial de baja densidad
+
+
+Tabla de la probabilidad del diseño en función de la zona: 
+```{r}
+kable(prop.table(table(DATA$Diseño, DATA$Zona), margin = 1))
+```
+
+Dicha tabla muestra el tipo de diseño de vivienda y la zona en que se encuentra. Un ejemplo sería: todas las casas separadas por multi niveles están en zona residencial de baja densidad. 
+
+
+Tabla de la calidad en función del tipo de vivienda: 
+```{r, fig.height=3}
+CrossTable(DATA$Tipo, DATA$Calidad, prop.chisq = FALSE)
+```
+En la tabla anterior, creada con la librería *gmodels*, se pueden observar las frecuencias relativas o marginales por fila, columna o totales de la calidad de la vivienda en función de su tipo.
+
+
+
+
+
+## Escalar las variables:
+
+El escalado de las variables, a través de la distancia euclídea, es de vital importancia para que unas variables no dominen a otras. Por ello, se realizará un proceso de estandarización (aglutinar valores en torno a la media).
+```{r}
+DATA <- select(DATA, -c("Zona", "Tipo", "AA"))
+
+DATA[,1:21] = scale(DATA[,1:21])
+```
+
+
+
+
+
+
+
+
+# **Parte 3: Aprendizaje estadístico (Machine Learning) **
+
+
+División Training y Testing:
+
+A continuación se realizará la división en el dataset a través del conjunto de entrenamiento (80%) y conjunto de testing (20%).  La parte de *Training*, a través de entrenar a la máquina, será de vital importancia para realizar las predicciones. El otro fragmento, *Test*, servirá para testear el modelo. Dicha división es fundamental para evitar el Overfiting, es decir, el sobre ajuste de la predicción.
+
+```{r}
+set.seed(2021)
+split= sample.split(DATA$PrecioVenta, SplitRatio = 0.8)
+Training = subset(DATA, split == TRUE)
+Test = subset(DATA, split == FALSE)
+```
+La función *split* servirá para indicar que parte pertenece a train y que parte a test devolviendo un vector booleano de TRUE o FALSE. 
+*Training* se compondrá de 1244 observaciones y 30 variables, en su defecto, *Test*, poseerá 214 observaciones y 30 variables. 
+
+
+### Algoritmos de regresión:
+
+
+Regresión lineal Múltiple: 
+
+Se realizará un ajuste de dicho modelo con el conjunto de *Training*. 
+```{r}
+RLM = lm (formula = PrecioVenta ~ .,  data = Training)
+
+summary(RLM)
+
+```
+
+Empleando el método de mínimos cuadrados se realiza la regresión lineal, es decir, las diferencias entre el dato real y la explicación del modelo se elevan al cuadrado para luego realizar su suma. El mejor modelo será aquel que minimice la suma de los cuadrados de las diferencias. 
+
+Observando el *summary* se puede llegar a la conclusión que un gran número de variables son no significativas al tener un p-valor muy elevado, es decir, poca relevancia estadística entre los parámetros. 
+
+```{r}
+
+# Predecir el conjunto de test
+# Sumnistrar el conjunto de test al predictor
+
+resulatado = predict(RLM, newdata = Test)
+
+```
+
+Construcción de un modelo más óptimo: 
+```{r}
+RLM = lm (formula = PrecioVenta ~ SupTotal + Calidad + Estado + Año + AñoReforma + AreaSotano +   Calefaccion +  SupHabitable + Habitaciones + SupGaraje  +   SupPorche +  Zona_FV  +     Zona_RH   +    Zona_RL + Zona_RM +  Tipo_Duplex +  Tipo_Twnhs,data = Training)
+
+summary(RLM)
+
+```
+
+A través de la eliminación hacia atrás se puede llegar a conseguir un modelo de 17 variables. Siendo todas ellas significativas y obteniendo un r^2^ ajustado mayor. Por tanto ahora, las variables independientes tendrán un mayor impacto en la variable dependiente. Los coeficientes son más explicativos. 
+
+
+
+Random Forest
+```{r}
+set.seed(2021)
+RF <- randomForest(x = Training[-21], 
+                            y = Training$PrecioVenta, 
+                            ntree = 1000) 
+
+respuestaRF = predict(RF, newdata = Test[-21])
+
+
+```
+
+Se ha construido un conjunto de 1000 árboles extraídos de forma aleatoria para realizar una predicción de la variable dependiente utilizando el bosque aleatorio. Cada árbol ejecuta su propia predicción para, posteriormente, realizar un promedio de todos los resultados. La principal utilidad de este modelo reside en la disminución de su sesgo y el aumento de la capacidad de predicción. Comparando la predicción con el conjunto de test, se puede observar que el modelo se aproxima, pero no acaba de realizar una buena predicción. 
+
+
+ 
+ 
+
+### Algoritmos de Clasificación:
+
+
+Máquina de Soporte Vectorial (SVM):
+```{r}
+index = 25
+SVM = svm(
+  formula = Zona_RM ~ .,
+  data = Training,
+  type = "C-classification",
+  kernel = "linear"
+)
+
+solucionSVM = predict(SVM, newdata = Test[, -index])
+
+table(Test[, index], solucionSVM)
+
+```
+El objetivo de SVM es ajustar el margen de las variables clasificadas, con vector de soporte, para realizar una predicción de la forma más óptima posible. Es decir, permite crear un espacio de dimensionalidad construyendo un contiguo de hiperplanos. Tras realizar las operaciones y gracias a la *matriz de confusión* se puede observar la fiabilidad de la predicción, ya que es capaz de clasificar al 100% que tipo de observaciones pertenecen a la *Zona_RM* y cuáles no.
+
+
+
+Random Forest:
+
+```{r, echo = FALSE}
+TIPO_2FMCON<- Training$Tipo_2fmCon
+
+TIPO_2FMCON <- as.character(TIPO_2FMCON)
+TIPO_2FMCON <- as.factor(TIPO_2FMCON)
+```
+
+```{r}
+
+RFcls = randomForest(x = Training[,-26], 
+                          y = TIPO_2FMCON, 
+                          ntree = 100)
+solucionRF = predict(RFcls, newdata = Test[,-26])
+
+
+table(Test[,26], solucionRF)
+
+```
+Tras utilizar 100 árboles para compilar el modelo deseado. Cada uno de estos árboles realiza la predicción de clasificación, la categoría con mayoría, obtiene el resultado. En este caso, la *matriz de confusión* también indica una gran capacidad de clasificación, acertando en el 100% de los casos que observaciones pertenecen al tipo de vivienda de *Two-family Conversion; originally built as one-family dwelling*
+```{r}
+
+
+```
+
+
+### Análisis de componentes principales (ACP): 
+```{r}
+pca <- preProcess(x = Training[,-21], method = "pca", pcaComp = 2)
+
+pcaTraining = predict(pca, Training)
+pcaTraining = pcaTraining[, c(2,3, 1)]
+
+pcaTest = predict(pca, Test)
+pcaTest = pcaTest[, c(2,3, 1)] 
+
+ResultadoACP = lm (formula = pcaTraining$PrecioVenta ~ PC1, 
+                data = pcaTraining)
+
+summary(ResultadoACP)
+
+ggplot() +
+  geom_point(aes( x = pcaTraining$PC1, y = pcaTraining$PrecioVenta), 
+             color = "blue" ) + 
+  geom_line (aes(x = pcaTraining$PC1, y = predict(ResultadoACP, newdata = pcaTraining)), 
+             color = "red") +
+  ggtitle("Regresión Lineal Simple") + xlab ("V1") + ylab("Previo Venta")
+
+
+respuestaPCA = predict(ResultadoACP, newdata = pcaTest[, -3])
+Final = table(pcaTest[, 3], respuestaPCA)
+```
+
+Empleando el ACP se intenta reducir la dimensión del problema en cuestión. Lo que se quiere es observar la correlación para obtener un nuevo conjuto de datos con las variables más explicativas, los componentes principales. Es decir, aquellas que explican una parte más grande de la varianza y tengan una menor multicolinealidad.
+
+
+
+
+
+### K-means:
+
+
+```{r}
+set.seed(2120)
+clustering <- kmeans (pcaTraining,3,iter.max = 500, nstart = 50) 
+
+clusplot(pcaTraining, clustering$cluster,lines = 3, shade = TRUE, color = TRUE, 
+         plotchar = FALSE, main = "Agrupación")
+```
+
+El algoritmo de clasificación realiza, a través de clústers, una agrupación fundamentándose en las características de los datos. El objetivo es reducir la suma de las distancias entre los objetos y el núcleo de su grupo. O, de igual manera, realizar grupos teniendo en cuenta la cercanía del valor medio.  
+
+Se puede observar como el gráfico de K-means está compuesto por una asociación de tres agrupaciones de datos y que la división no es perfecta, pero se adapta bastante a los datos. 
+
